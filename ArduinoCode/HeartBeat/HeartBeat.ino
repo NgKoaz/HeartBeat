@@ -17,7 +17,7 @@
 #define PULSE_SAMPLES                       256
 #define SAMPLE_FREQ                         50
 
-#define HB_BUFFER_SIZE                      2
+#define HB_BUFFER_SIZE                      4
 
 // Sampling is tightly related to the dynamic range of the ADC.
 // refer to the datasheet for further info
@@ -34,7 +34,7 @@
 #define PULSE_WIDTH                         MAX30100_SPC_PW_1600US_16BITS
 #define HIGHRES_MODE                        true
 
-#define START_COUNTER                       (500 / REPORTING_PERIOD_MS)
+#define START_COUNTER                       (1500 / REPORTING_PERIOD_MS)
 #define RESET_COUNTER                       (200 / REPORTING_PERIOD_MS)
 
 MAX30100 sensor;
@@ -98,6 +98,8 @@ void resetTimerRun(){
   HB_Buffer[3] = 0;
 
   startCounter = START_COUNTER;
+  Serial.println(0);
+  Blynk.virtualWrite(V0, 0);
 }
 
 // Calculate average of 4 latest records.
@@ -112,22 +114,19 @@ void update_HB_Buffer(double HB){
   for(uint8_t j = 0; j < HB_BUFFER_SIZE; j++){
     sum += HB_Buffer[j];
   }
-
   int heartrate = positive_round((sum / numHBValue) * 60);
-  Serial.print(positive_round(heartrate));
-  Serial.print(" ");
-  Serial.println((sum / numHBValue) * 60);
+  Serial.println(heartrate);
   Blynk.virtualWrite(V0, heartrate);
 }
 
 void setup() {
   Serial.begin(115200);
+  Blynk.begin(auth, ssid, pass);
   Serial.println("Initializing MAX30100..");
   while (!sensor.begin()) {
     Serial.println("FAILED");
     delay(500);
   }
-  Blynk.begin(auth, ssid, pass);
   // Set up the wanted parameters
   sensor.setMode(MAX30100_MODE_SPO2_HR);
   sensor.setLedsCurrent(IR_LED_CURRENT, RED_LED_CURRENT);
@@ -138,27 +137,22 @@ void setup() {
 
 void loop() {
   while(1){
+    Blynk.run();
     sensor.update();
     curTime = millis();
+    sensor.getRawValues(&ir, &red);
     if (curTime - tsLastReport >= REPORTING_PERIOD_MS){
       tsLastReport = curTime;
-      sensor.getRawValues(&ir, &red);
       if (red >= FINGER_ON){
         refreshResetCounter();
-        //if (!start()) continue;
-
+        if (!start()) continue;
         // Filter with passband <= 4 Hz
         pre_y = cur_y;
         pre_x = cur_x;
         cur_x = red;
         cur_y = 0.5983 * pre_y + 0.2008 * cur_x + 0.2008 * pre_x;
 
-        // Serial.print(red);
-        // Serial.print(" ");
-        // Serial.println(cur_y);
-
         redArray[i++] = (double)cur_y;
-
         // Use FFT to calculate HeartRate when buffer is full.
         if (i == 0)
         {
